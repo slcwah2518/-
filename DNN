@@ -1,0 +1,85 @@
+from sklearn.preprocessing import StandardScaler
+scaler = StandardScaler()
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_val_scaled = scaler.transform(X_val)
+X_test_scaled = scaler.transform(X_test)
+
+X_train_scaled.shape, X_val.shape, X_test.shape, y_train.shape, y_val.shape, y_test.shape
+
+y_test = y_test.drop(['target','severity'], axis=1)
+y_val = y_val.drop(['target','severity'], axis=1)
+y_train = y_train.drop(['target','severity'], axis=1)
+
+balance_after_smote = {
+    "Original detect distribution": y_train.value_counts(),
+    "SMOTE detect distribution": y_train_smote['detect'].value_counts()
+}
+
+# 스케일된 데이터를 PyTorch 텐서로 변환
+X_train_tensor = torch.tensor(X_train_smote, dtype=torch.float32)
+X_val_tensor = torch.tensor(X_val_scaled, dtype=torch.float32)
+X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32)
+
+# 레이블 데이터를 PyTorch 텐서로 변환
+y_train_tensor = torch.tensor(y_train_smote.values.astype(float), dtype=torch.float32) 
+y_val_tensor = torch.tensor(y_val.values.astype(float), dtype=torch.float32)
+y_test_tensor = torch.tensor(y_test.values.astype(float), dtype=torch.float32)
+
+# TensorDatasets을 생성
+train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+val_dataset = TensorDataset(X_val_tensor, y_val_tensor)
+test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
+
+# DataLoaders를 생성
+batch_size = 64 
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+(train_loader.dataset.tensors[0].shape, train_loader.dataset.tensors[1].shape,
+ val_loader.dataset.tensors[0].shape, val_loader.dataset.tensors[1].shape,
+ test_loader.dataset.tensors[0].shape, test_loader.dataset.tensors[1].shape
+import torch.nn.functional as F
+
+class ComplexDNN(nn.Module):
+    def __init__(self, input_size):
+        super(ComplexDNN, self).__init__()
+        self.fc1 = nn.Linear(input_size, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, 32)
+        self.fc4 = nn.Linear(32, 1)
+        self.dropout = nn.Dropout(0.5)  # 드롭아웃 레이어 추가
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)  # 드롭아웃 적용
+        x = F.relu(self.fc2(x))
+        x = self.dropout(x)
+        x = F.relu(self.fc3(x))
+        x = self.dropout(x)
+        x = self.fc4(x)
+        x = torch.sigmoid(x)
+        return x
+
+# 모델 초기화
+model = ComplexDNN(input_size=X_train_smote.shape[1])
+
+# 손실 함수와 옵티마이저 설정
+criterion = nn.BCELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+# 에폭 수 설정
+num_epochs = 20
+
+# 모델 훈련
+for epoch in range(num_epochs):
+    model.train()
+    for inputs, labels in train_loader:
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+    print(f'Epoch [{epoch + 1}/{num_epochs}] Loss: {loss.item()}')
