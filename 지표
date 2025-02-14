@@ -1,0 +1,18 @@
+# 모델 평가
+model.eval()
+with torch.no_grad():
+    y_pred = model(X_test_tensor)
+y_pred_binary = (y_pred >= 0.5).float()
+
+# 성능 지표 계산
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+accuracy = accuracy_score(y_test_tensor, y_pred_binary)
+precision = precision_score(y_test_tensor, y_pred_binary)
+recall = recall_score(y_test_tensor, y_pred_binary)
+f1 = f1_score(y_test_tensor, y_pred_binary)
+
+print(f'Accuracy: {accuracy}')
+print(f'Precision: {precision}')
+print(f'Recall: {recall}')
+print(f'F1 Score: {f1}')
