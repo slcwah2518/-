@@ -1,0 +1,120 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+from sklearn.metrics import classification_report
+
+def convert_datetime(df, column_name):
+    df[column_name] = pd.to_datetime(df[column_name]) 
+    df['year'] = df[column_name].dt.year
+    df['month'] = df[column_name].dt.month
+    df['day'] = df[column_name].dt.day
+    df['hour'] = df[column_name].dt.hour
+    df['minute'] = df[column_name].dt.minute
+    df['second'] = df[column_name].dt.second
+    return df.drop([column_name], axis=1)
+
+df2 = convert_datetime(df2, 'Time')
+
+filtered_data = df2[df2['target'] != 0]
+y_filtered = filtered_data['target']
+X_filtered = filtered_data.drop(['target'], axis=1)
+
+sequence_length = 24
+X_sequences = []
+y_sequences = []
+for i in range(len(X_filtered) - sequence_length):
+    X_sequences.append(X_filtered.iloc[i:i + sequence_length].values)
+    y_sequences.append(y_filtered.iloc[i + sequence_length]) 
+X_sequences = np.array(X_sequences)
+y_sequences = np.array(y_sequences)
+
+scaler = StandardScaler()
+X_sequences_scaled = scaler.fit_transform(X_sequences.reshape(-1, X_sequences.shape[-1]))
+X_sequences_scaled = X_sequences_scaled.reshape(X_sequences.shape)
+
+X_tensor = torch.tensor(X_sequences_scaled, dtype=torch.float32)
+y_tensor = torch.tensor(y_sequences, dtype=torch.long)
+
+X_train, X_test, y_train, y_test = train_test_split(X_tensor, y_tensor, test_size=0.2, random_state=42)
+
+y_train -= 1
+y_test -= 1
+
+train_dataset = TensorDataset(X_train, y_train)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+
+test_dataset = TensorDataset(X_test, y_test)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+
+class LSTMModel(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers):
+        super(LSTMModel, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        out, _ = self.lstm(x, (h0, c0))
+        out = self.fc(out[:, -1, :])
+        return out
+
+input_size = X_train.shape[2] 
+hidden_size = 50  
+output_size = len(np.unique(y_filtered))  
+num_layers = 2  
+
+model = LSTMModel(input_size, hidden_size, output_size, num_layers)
+
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+def train_model(model, train_loader, criterion, optimizer, num_epochs):
+    for epoch in range(num_epochs):
+        model.train()
+        running_loss = 0.0
+        for inputs, labels in train_loader:
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+
+        epoch_loss = running_loss / len(train_loader)
+        print(f'Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss:.4f}')
+
+num_epochs = 20
+train_model(model, train_loader, criterion, optimizer, num_epochs)
+
+#평가
+def evaluate_model(model, test_loader):
+    model.eval()  
+    all_predictions = []
+    all_labels = []
+
+    with torch.no_grad():
+        for inputs, labels in test_loader:
+            outputs = model(inputs)
+            _, predicted = torch.max(outputs, 1)
+            all_predictions.extend(predicted.numpy())
+            all_labels.extend(labels.numpy())
+
+    accuracy = accuracy_score(all_labels, all_predictions)
+    recall = recall_score(all_labels, all_predictions, average='macro')
+    precision = precision_score(all_labels, all_predictions, average='macro')
+    f1 = f1_score(all_labels, all_predictions, average='macro')
+
+    return accuracy, recall, precision, f1, all_predictions, all_labels
+
+accuracy, recall, precision, f1, predictions, true_labels = evaluate_model(model, test_loader)
+
+report = classification_report(true_labels, predictions)
+print(report)
